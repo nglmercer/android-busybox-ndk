@@ -1,0 +1,332 @@
+name: Build Magisk Module
+
+on:
+  push:
+    tags:
+      - 'v*'
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      busybox_version:
+        description: 'BusyBox version to build'
+        required: false
+        default: '1.36.1'
+      architectures:
+        description: 'Architectures to build (space-separated)'
+        required: false
+        default: 'arm arm64 x86 x86_64'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container: ubuntu:22.04
+
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [arm, arm64, x86, x86_64]
+        include:
+          - arch: arm
+            triple: arm-linux-androideabi
+            android_api: 21
+          - arch: arm64
+            triple: aarch64-linux-android
+            android_api: 21
+          - arch: x86
+            triple: i686-linux-android
+            android_api: 21
+          - arch: x86_64
+            triple: x86_64-linux-android
+            android_api: 21
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          apt-get update
+          apt-get install -y \
+            build-essential \
+            git \
+            wget \
+            libc6-dev \
+            libncurses5-dev \
+            zlib1g-dev \
+            pkg-config \
+            autoconf \
+            automake \
+            libtool \
+            gawk \
+            bison \
+            texinfo
+
+      - name: Download Android NDK
+        run: |
+          wget -q https://dl.google.com/android/repository/android-ndk-r25c-linux.zip
+          unzip -q android-ndk-r25c-linux.zip
+          mv android-ndk-r25c ${{ runner.workspace }}/android-ndk
+
+      - name: Setup Android NDK
+        run: |
+          echo "NDK_PATH=${{ runner.workspace }}/android-ndk" >> $GITHUB_ENV
+          echo "ANDROID_NDK_HOME=${{ runner.workspace }}/android-ndk" >> $GITHUB_ENV
+
+      - name: Clone BusyBox
+        run: |
+          cd ${{ runner.workspace }}
+          git clone --depth 1 --branch ${{ github.event.inputs.busybox_version || '1.36.1' }} https://git.busybox.net/busybox.git busybox-${{ matrix.arch }}
+          cd busybox-${{ matrix.arch }}
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+
+      - name: Apply patches
+        run: |
+          cd ${{ runner.workspace }}/busybox-${{ matrix.arch }}
+          # Copy config
+          cp ${{ github.workspace }}/osm0sis-basic-unified.config .config
+
+          # Apply patches from the repository
+          for patch in ${{ github.workspace }}/patches/*.patch; do
+            if [ -f "$patch" ]; then
+              git am --whitespace=nowarn $patch || echo "Patch $patch failed, continuing..."
+            fi
+          done
+
+      - name: Configure BusyBox
+        run: |
+          cd ${{ runner.workspace }}/busybox-${{ matrix.arch }}
+          
+          # Set cross-compile prefix
+          CROSS_COMPILE="${{ runner.workspace }}/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/${{ matrix.triple }}21-"
+          echo "CROSS_COMPILE=$CROSS_COMPILE" >> $GITHUB_ENV
+          
+          # Update config with correct paths
+          sed -i "s|CONFIG_CROSS_COMPILER_PREFIX=\"\"|CONFIG_CROSS_COMPILER_PREFIX=\"$CROSS_COMPILE\"|g" .config
+          sed -i "s|CONFIG_SYSROOT=\"\"|CONFIG_SYSROOT=\"${{ runner.workspace }}/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot\"|g" .config
+
+      - name: Build BusyBox
+        run: |
+          cd ${{ runner.workspace }}/busybox-${{ matrix.arch }}
+          export CROSS_COMPILE="${{ env.CROSS_COMPILE }}"
+          export ARCH=${{ matrix.arch }}
+          
+          make -j$(nproc)
+          make install
+
+      - name: Create directory structure for Magisk module
+        run: |
+          mkdir -p ${{ runner.workspace }}/module/${{ matrix.arch }}
+          cd ${{ runner.workspace }}/busybox-${{ matrix.arch }}/_install
+          cp -r * ${{ runner.workspace }}/module/${{ matrix.arch }}/
+
+      - name: Upload artifact for ${{ matrix.arch }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: busybox-${{ matrix.arch }}
+          path: ${{ runner.workspace }}/module/${{ matrix.arch }}
+
+  package:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create Magisk module structure
+        run: |
+          mkdir -p module/system/bin
+          mkdir -p module/system/etc
+          mkdir -p module/META-INF/com/google/android
+          mkdir -p module/custom
+
+      - name: Combine binaries for all architectures
+        run: |
+          # For Magisk, we typically use a single architecture or create separate modules
+          # This script creates a multi-architecture aware module
+          
+          for arch_dir in artifacts/busybox-*; do
+            arch=$(basename $arch_dir | cut -d'-' -f2)
+            cp -r $arch_dir/* module/
+          done
+
+      - name: Create module.prop
+        run: |
+          VERSION=$(echo ${{ github.ref_name }} | sed 's/v//')
+          cat > module/module.prop << EOF
+id=android-busybox-ndk
+name=Android BusyBox NDK
+version=$VERSION
+versionCode=$(git rev-list --count HEAD)
+author=GitHub Actions
+description=BusyBox compiled with Android NDK for Magisk
+EOF
+
+      - name: Create update-binary
+        run: |
+          cat > module/META-INF/com/google/android/update-binary << 'UPDATER_EOF'
+#!/bin/sh
+# Magisk update-binary wrapper
+umask 022
+
+ui_print() { echo "$1"; }
+
+ui_print "- Installing BusyBox module..."
+
+# Get the architecture
+ARCH=$(getprop ro.product.cpu.abi | cut -d'-' -f1)
+if [ -z "$ARCH" ]; then
+    ARCH=$(uname -m)
+fi
+
+# Determine which busybox binary to use
+case "$ARCH" in
+    arm*) BUSYBOX_PATH="system/bin/arm/busybox" ;;
+    aarch64*) BUSYBOX_PATH="system/bin/arm64/busybox" ;;
+    i?86*) BUSYBOX_PATH="system/bin/x86/busybox" ;;
+    x86_64*) BUSYBOX_PATH="system/bin/x86_64/busybox" ;;
+    *) ui_print "- Error: Unknown architecture: $ARCH"; exit 1 ;;
+esac
+
+if [ -f "$BUSYBOX_PATH" ]; then
+    # Copy the correct busybox binary
+    cp "$BUSYBOX_PATH" /system/bin/busybox
+    chmod 755 /system/bin/busybox
+    
+    # Create symlinks for all busybox applets
+    for applet in $(/system/bin/busybox --list); do
+        if [ ! -e "/system/bin/$applet" ] && [ ! -e "/system/xbin/$applet" ]; then
+            ln -sf busybox "/system/xbin/$applet" 2>/dev/null || true
+        fi
+    done
+    
+    ui_print "- Done!"
+else
+    ui_print "- Error: BusyBox binary not found at $BUSYBOX_PATH"
+    exit 1
+fi
+
+exit 0
+UPDATER_EOF
+          chmod +x module/META-INF/com/google/android/update-binary
+
+      - name: Create updater-script
+        run: |
+          cat > module/META-INF/com/google/android/updater-script << 'EOF'
+# Magisk updater script
+ui_print(" BusyBox NDK Module...");
+
+# Set permissions
+set_metadata("module.prop", "mode", "0644");
+set_metadata("system/bin/busybox", "mode", "0755");
+EOF
+
+      - name: Create post-fs-data.sh
+        run: |
+          cat > module/post-fs-data.sh << 'EOF'
+#!/system/bin/sh
+# Post-fs-data script for BusyBox
+# Configure any runtime settings here
+
+EOF
+          chmod +x module/post-fs-data.sh
+
+      - name: Create service.sh
+        run: |
+          cat > module/service.sh << 'EOF'
+#!/system/bin/sh
+# Service script for BusyBox
+# Start any daemons here if needed
+
+EOF
+          chmod +x module/service.sh
+
+      - name: Create customize.sh
+        run: |
+          cat > module/customize.sh << 'EOF'
+#!/system/bin/sh
+# Custom installation script
+
+# Set permissions
+set_perm(0, 0, 0755, "/system/bin/busybox");
+
+# Create symlinks for all applets
+if [ -f "/system/bin/busybox" ]; then
+    for applet in $(/system/bin/busybox --list); do
+        ln -sf /system/bin/busybox /system/xbin/$applet 2>/dev/null
+    done
+fi
+
+EOF
+          chmod +x module/customize.sh
+
+      - name: Create README for the module
+        run: |
+          cat > module/README.md << EOF
+# Android BusyBox NDK Magisk Module
+
+This module provides BusyBox utilities for Android, compiled using the Android NDK.
+
+## Features
+- Static binary for maximum compatibility
+- All standard BusyBox applets included
+- Magisk integration for easy installation
+
+## Usage
+After installation, you can use BusyBox commands directly or through symlinks in /system/xbin.
+
+## Building
+This module was automatically built by GitHub Actions from:
+https://github.com/${{ github.repository }}
+
+Commit: ${{ github.sha }}
+EOF
+
+      - name: Create zip archive
+        run: |
+          cd module
+          VERSION=$(echo ${{ github.ref_name }} | sed 's/v//')
+          ARCHIVE_NAME="android-busybox-ndk-v${VERSION}-${GITHUB_SHA:0:7}.zip"
+          zip -r "$ARCHIVE_NAME" .
+          mv "$ARCHIVE_NAME" ${{ runner.workspace }}
+          echo "ARCHIVE_NAME=$ARCHIVE_NAME" >> $GITHUB_ENV
+
+      - name: Upload release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release
+          path: ${{ runner.workspace }}/${{ env.ARCHIVE_NAME }}
+
+      - name: Create Release
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ runner.workspace }}/${{ env.ARCHIVE_NAME }}
+          body: |
+            ## Android BusyBox NDK Magisk Module
+
+            Pre-built Magisk module containing BusyBox compiled with Android NDK.
+
+            ### Features
+            - Static binaries for all architectures
+            - All standard BusyBox applets
+            - Easy Magisk installation
+
+            ### Installation
+            1. Download the ZIP file
+            2. Install via Magisk -> Modules -> Install from storage
+            3. Reboot
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Summary
+        run: |
+          echo "Build complete!"
+          echo "Archive: ${{ env.ARCHIVE_NAME }}"
+          ls -lh ${{ runner.workspace }}/${{ env.ARCHIVE_NAME }}
