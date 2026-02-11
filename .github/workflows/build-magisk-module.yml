@@ -81,12 +81,27 @@ jobs:
       - name: Setup Android NDK
         run: |
           unzip -q android-ndk-${{ env.NDK_VERSION }}-linux.zip
-          echo "NDK_PATH=${{ runner.workspace }}/android-ndk-${{ env.NDK_VERSION }}" >> $GITHUB_ENV
-          echo "ANDROID_NDK_HOME=${{ runner.workspace }}/android-ndk-${{ env.NDK_VERSION }}" >> $GITHUB_ENV
+          NDK_PATH="${{ runner.workspace }}/android-ndk-${{ env.NDK_VERSION }}"
+          echo "NDK_PATH=$NDK_PATH" >> $GITHUB_ENV
+          echo "ANDROID_NDK_HOME=$NDK_PATH" >> $GITHUB_ENV
+          echo "NDK_PATH=$NDK_PATH" >> $GITHUB_ENV
+
+      - name: Create NDK gcc symlinks
+        run: |
+          # NDK r25c uses clang only, create symlinks for gcc names
+          NDK_BIN="${{ env.NDK_PATH }}/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          cd "$NDK_BIN"
+          for target in aarch64-linux-android21 armv7a-linux-androideabi21 i686-linux-android21 x86_64-linux-android21; do
+            for tool in gcc g++ ar as nm objcopy objdump ranlib strip; do
+              if [ ! -f "${target}-${tool}" ] && [ -f "${target}-clang" ]; then
+                ln -sf "${target}-clang" "${target}-${tool}"
+              fi
+            done
+          done
 
       - name: Clone BusyBox
         run: |
-          cd ${{ runner.workspace }}
+          cd "${{ runner.workspace }}"
           wget -q https://busybox.net/downloads/busybox-${{ env.BUSYBOX_VERSION }}.tar.bz2
           tar -xjf busybox-${{ env.BUSYBOX_VERSION }}.tar.bz2
           mv busybox-${{ env.BUSYBOX_VERSION }} busybox-${{ matrix.arch }}
@@ -99,58 +114,46 @@ jobs:
 
       - name: Apply patches
         run: |
-          cd ${{ runner.workspace }}/busybox-${{ matrix.arch }}
-          cp ${{ github.workspace }}/osm0sis-basic-unified.config .config
-          for patch in ${{ github.workspace }}/patches/*.patch; do
+          cd "${{ runner.workspace }}/busybox-${{ matrix.arch }}"
+          cp "${{ github.workspace }}/osm0sis-basic-unified.config" .config
+          for patch in "${{ github.workspace }}"/patches/*.patch; do
             if [ -f "$patch" ]; then
-              git am --whitespace=nowarn $patch 2>/dev/null || true
+              git am --whitespace=nowarn "$patch" 2>/dev/null || true
             fi
-          done
-
-      - name: Create NDK gcc symlinks
-        run: |
-          # NDK r25c uses clang only, create symlinks for gcc names
-          cd ${{ env.NDK_PATH }}/toolchains/llvm/prebuilt/linux-x86_64/bin
-          for target in aarch64-linux-android21 armv7a-linux-androideabi21 i686-linux-android21 x86_64-linux-android21; do
-            for tool in gcc g++ ar as nm objcopy objdump ranlib strip; do
-              if [ ! -f "${target}-${tool}" ] && [ -f "${target}-clang" ]; then
-                ln -sf ${target}-clang ${target}-${tool}
-              fi
-            done
           done
 
       - name: Configure BusyBox
         run: |
-          cd ${{ runner.workspace }}/busybox-${{ matrix.arch }}
+          cd "${{ runner.workspace }}/busybox-${{ matrix.arch }}"
           CROSS_COMPILE="${{ env.NDK_PATH }}/toolchains/llvm/prebuilt/linux-x86_64/bin/${{ matrix.triple }}"
           echo "CROSS_COMPILE=$CROSS_COMPILE" >> $GITHUB_ENV
-          sed -i 's|CONFIG_CROSS_COMPILER_PREFIX=""|CONFIG_CROSS_COMPILER_PREFIX="'$CROSS_COMPILE'"|g' .config
+          sed -i "s|CONFIG_CROSS_COMPILER_PREFIX=\"\"|CONFIG_CROSS_COMPILER_PREFIX=\"${CROSS_COMPILE}\"|g" .config
           sed -i 's|CONFIG_EXTRA_CFLAGS=.*|CONFIG_EXTRA_CFLAGS="-DANDROID -D__ANDROID__ -D__ANDROID_API__=21 -Os"|g' .config
           sed -i 's|CONFIG_EXTRA_LDFLAGS=.*|CONFIG_EXTRA_LDFLAGS=""|g' .config
           sed -i 's|CONFIG_STATIC=y|# CONFIG_STATIC is not set|g' .config
           sed -i 's|CONFIG_STATIC_LIBGCC=y|# CONFIG_STATIC_LIBGCC is not set|g' .config
           SYSROOT="${{ env.NDK_PATH }}/toolchains/llvm/prebuilt/linux-x86_64/sysroot"
-          sed -i 's|CONFIG_SYSROOT=""|CONFIG_SYSROOT="'$SYSROOT'"|g' .config
+          sed -i "s|CONFIG_SYSROOT=\"\"|CONFIG_SYSROOT=\"${SYSROOT}\"|g" .config
 
       - name: Build BusyBox
         run: |
-          cd ${{ runner.workspace }}/busybox-${{ matrix.arch }}
+          cd "${{ runner.workspace }}/busybox-${{ matrix.arch }}"
           export CROSS_COMPILE="${{ env.CROSS_COMPILE }}"
-          export ARCH=${{ matrix.arch }}
+          export ARCH="${{ matrix.arch }}"
           make -j$(nproc)
           make install
 
       - name: Create directory structure for Magisk module
         run: |
-          mkdir -p ${{ runner.workspace }}/module/${{ matrix.arch }}
-          cd ${{ runner.workspace }}/busybox-${{ matrix.arch }}/_install
-          cp -r * ${{ runner.workspace }}/module/${{ matrix.arch }}/
+          mkdir -p "${{ runner.workspace }}"/module/${{ matrix.arch }}
+          cd "${{ runner.workspace }}/busybox-${{ matrix.arch }}/_install"
+          cp -r * "${{ runner.workspace }}/module/${{ matrix.arch }}"/
 
       - name: Upload artifact for ${{ matrix.arch }}
         uses: actions/upload-artifact@v4
         with:
           name: busybox-${{ matrix.arch }}
-          path: ${{ runner.workspace }}/module/${{ matrix.arch }}
+          path: "${{ runner.workspace }}/module/${{ matrix.arch }}"
 
   package:
     needs: build
