@@ -56,8 +56,11 @@ jobs:
           export ARCH=${{ matrix.arch }}
           export SYSROOT=$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/sysroot
 
+          VERSION=${{ github.event.inputs.version || '1.36.1' }}
           cd ${{ github.workspace }}
-          git clone --depth 1 --branch ${{ github.event.inputs.version || '1.36.1' }} https://git.busybox.net/busybox.git busybox-build
+          wget -q https://busybox.net/downloads/busybox-${VERSION}.tar.bz2
+          tar -xjf busybox-${VERSION}.tar.bz2
+          mv busybox-${VERSION} busybox-build
           cd busybox-build
 
           cp ${{ github.workspace }}/osm0sis-basic-unified.config .config

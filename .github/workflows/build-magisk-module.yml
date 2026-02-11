@@ -67,20 +67,25 @@ jobs:
         run: |
           wget -q https://dl.google.com/android/repository/android-ndk-r25c-linux.zip
           unzip -q android-ndk-r25c-linux.zip
-          mv android-ndk-r25c ${{ runner.workspace }}/android-ndk
 
       - name: Setup Android NDK
         run: |
-          echo "NDK_PATH=${{ runner.workspace }}/android-ndk" >> $GITHUB_ENV
-          echo "ANDROID_NDK_HOME=${{ runner.workspace }}/android-ndk" >> $GITHUB_ENV
+          echo "NDK_PATH=${{ runner.workspace }}/android-ndk-r25c" >> $GITHUB_ENV
+          echo "ANDROID_NDK_HOME=${{ runner.workspace }}/android-ndk-r25c" >> $GITHUB_ENV
 
       - name: Clone BusyBox
         run: |
           cd ${{ runner.workspace }}
-          git clone --depth 1 --branch ${{ github.event.inputs.busybox_version || '1.36.1' }} https://git.busybox.net/busybox.git busybox-${{ matrix.arch }}
+          VERSION=${{ github.event.inputs.busybox_version || '1.36.1' }}
+          wget -q https://busybox.net/downloads/busybox-${VERSION}.tar.bz2
+          tar -xjf busybox-${VERSION}.tar.bz2
+          mv busybox-${VERSION} busybox-${{ matrix.arch }}
           cd busybox-${{ matrix.arch }}
+          git init
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git config user.name "github-actions[bot]"
+          git add .
+          git commit -m "Initial import of BusyBox ${VERSION}"
 
       - name: Apply patches
         run: |
@@ -95,10 +100,11 @@ jobs:
       - name: Configure BusyBox
         run: |
           cd ${{ runner.workspace }}/busybox-${{ matrix.arch }}
-          CROSS_COMPILE="${{ runner.workspace }}/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/${{ matrix.triple }}21-"
+          CROSS_COMPILE="${{ env.NDK_PATH }}/toolchains/llvm/prebuilt/linux-x86_64/bin/${{ matrix.triple }}21-"
           echo "CROSS_COMPILE=$CROSS_COMPILE" >> $GITHUB_ENV
           sed -i "s|CONFIG_CROSS_COMPILER_PREFIX=\"\"|CONFIG_CROSS_COMPILER_PREFIX=\"$CROSS_COMPILE\"|g" .config
-          sed -i "s|CONFIG_SYSROOT=\"\"|CONFIG_SYSROOT=\"${{ runner.workspace }}/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot\"|g" .config
+          SYSROOT="${{ env.NDK_PATH }}/toolchains/llvm/prebuilt/linux-x86_64/sysroot"
+          sed -i "s|CONFIG_SYSROOT=\"\"|CONFIG_SYSROOT=\"$SYSROOT\"|g" .config
 
       - name: Build BusyBox
         run: |

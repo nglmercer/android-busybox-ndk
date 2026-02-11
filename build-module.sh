@@ -66,8 +66,10 @@ build_arch() {
     
     # Clone BusyBox if not exists
     if [ ! -d "busybox" ]; then
-        log_info "Cloning BusyBox ${BUSYBOX_VERSION}..."
-        git clone --depth 1 --branch ${BUSYBOX_VERSION} https://git.busybox.net/busybox.git
+        log_info "Downloading BusyBox ${BUSYBOX_VERSION}..."
+        wget -q https://busybox.net/downloads/busybox-${BUSYBOX_VERSION}.tar.bz2
+        tar -xjf busybox-${BUSYBOX_VERSION}.tar.bz2
+        mv busybox-${BUSYBOX_VERSION} busybox
     fi
     
     cd busybox
