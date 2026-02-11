@@ -1,4 +1,16 @@
-android-ndk-r25c/
-output/build-arm64/
+# Android NDK
+android-ndk-*/
 android-ndk-r25c-linux.zip
-android-busybox-ndk-v1.36.1.zip
+
+# Build outputs
+output/
+
+# BusyBox sources
+busybox-*/
+*.tar.bz2
+
+# Generated ZIP files
+android-busybox-ndk-*.zip
+
+# IDE
+.vscode/
