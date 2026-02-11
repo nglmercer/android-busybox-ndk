@@ -36,6 +36,20 @@ cleanup() {
     rm -rf "${OUT_DIR}"
 }
 
+setup_ndk_symlinks() {
+    log_info "Setting up NDK symlinks..."
+    local ndk_bin="${NDK_PATH}/toolchains/llvm/prebuilt/linux-x86_64/bin"
+    
+    # Create symlinks for cross-compilation tools
+    for tool in ar as nm objcopy objdump ranlib strip ld.bfd ld.gold; do
+        for target in aarch64-linux-android21 armv7a-linux-androideabi21 i686-linux-android21 x86_64-linux-android21; do
+            if [ -f "${ndk_bin}/${tool}" ] && [ ! -f "${ndk_bin}/${target}-${tool}" ]; then
+                ln -sf "${tool}" "${ndk_bin}/${target}-${tool}"
+            fi
+        done
+    done
+}
+
 build_arch() {
     local arch=$1
     local triple
@@ -245,6 +259,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export SCRIPT_DIR
 
 cleanup
+setup_ndk_symlinks
 mkdir -p "${OUT_DIR}"
 
 # Build each architecture
