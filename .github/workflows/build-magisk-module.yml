@@ -3,19 +3,19 @@ name: Build Magisk Module
 on:
   push:
     tags:
-      - 'v*'
+      - "v*"
     branches:
       - main
   workflow_dispatch:
     inputs:
       busybox_version:
-        description: 'BusyBox version to build'
+        description: "BusyBox version to build"
         required: false
-        default: '1.36.1'
+        default: "1.36.1"
       architectures:
-        description: 'Architectures to build (space-separated)'
+        description: "Architectures to build (space-separated)"
         required: false
-        default: 'arm arm64 x86 x86_64'
+        default: "arm arm64 x86 x86_64"
 
 env:
   NDK_VERSION: r25c
@@ -80,11 +80,10 @@ jobs:
 
       - name: Setup Android NDK
         run: |
-          unzip -q android-ndk-${{ env.NDK_VERSION }}-linux.zip
+          unzip -q android-ndk-${{ env.NDK_VERSION }}-linux.zip -d "${{ runner.workspace }}"
           NDK_PATH="${{ runner.workspace }}/android-ndk-${{ env.NDK_VERSION }}"
           echo "NDK_PATH=$NDK_PATH" >> $GITHUB_ENV
           echo "ANDROID_NDK_HOME=$NDK_PATH" >> $GITHUB_ENV
-          echo "NDK_PATH=$NDK_PATH" >> $GITHUB_ENV
 
       - name: Create NDK gcc symlinks
         run: |
@@ -92,11 +91,18 @@ jobs:
           NDK_BIN="${{ env.NDK_PATH }}/toolchains/llvm/prebuilt/linux-x86_64/bin"
           cd "$NDK_BIN"
           for target in aarch64-linux-android21 armv7a-linux-androideabi21 i686-linux-android21 x86_64-linux-android21; do
-            for tool in gcc g++ ar as nm objcopy objdump ranlib strip; do
-              if [ ! -f "${target}-${tool}" ] && [ -f "${target}-clang" ]; then
-                ln -sf "${target}-clang" "${target}-${tool}"
-              fi
-            done
+            # GCC/G++ -> Clang
+            ln -sf "${target}-clang" "${target}-gcc"
+            ln -sf "${target}-clang++" "${target}-g++"
+            # AS -> Clang
+            ln -sf "${target}-clang" "${target}-as"
+            # Binutils -> LLVM tools
+            ln -sf llvm-ar "${target}-ar"
+            ln -sf llvm-nm "${target}-nm"
+            ln -sf llvm-objcopy "${target}-objcopy"
+            ln -sf llvm-objdump "${target}-objdump"
+            ln -sf llvm-ranlib "${target}-ranlib"
+            ln -sf llvm-strip "${target}-strip"
           done
 
       - name: Clone BusyBox
