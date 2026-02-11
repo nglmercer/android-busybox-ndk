@@ -231,9 +231,10 @@ jobs:
           path: android-busybox-ndk-v*.zip
 
       - name: Create Release
-        if: startsWith(github.ref, 'refs/tags/')
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('v{0}', env.BUSYBOX_VERSION) }}
           files: android-busybox-ndk-v*.zip
           body: |
             ## Android BusyBox NDK Magisk Module v${{ env.BUSYBOX_VERSION }}
