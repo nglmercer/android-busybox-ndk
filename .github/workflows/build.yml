@@ -56,22 +56,17 @@ jobs:
           export ARCH=${{ matrix.arch }}
           export SYSROOT=$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/sysroot
 
-          # Clone BusyBox
           cd ${{ github.workspace }}
-          git clone --depth 1 --branch ${{ github.event.inputs.version || '1.36.1' }} \
-            https://git.busybox.net/busybox.git busybox-build
+          git clone --depth 1 --branch ${{ github.event.inputs.version || '1.36.1' }} https://git.busybox.net/busybox.git busybox-build
           cd busybox-build
 
-          # Copy and configure
           cp ${{ github.workspace }}/osm0sis-basic-unified.config .config
           sed -i "s|CONFIG_CROSS_COMPILER_PREFIX=\"\"|CONFIG_CROSS_COMPILER_PREFIX=\"${CROSS_COMPILE}\"|g" .config
           sed -i "s|CONFIG_SYSROOT=\"\"|CONFIG_SYSROOT=\"${SYSROOT}\"|g" .config
 
-          # Build
           make -j$(nproc)
           make install
 
-          # Move to artifact dir
           mkdir -p ${{ github.workspace }}/${{ matrix.artifact }}
           cp -r _install/* ${{ github.workspace }}/${{ matrix.artifact }}/
 
@@ -96,94 +91,83 @@ jobs:
       - name: Set up module structure
         run: |
           VERSION=${{ github.event.inputs.version || '1.36.1' }}
-          
           mkdir -p module/system/bin
           mkdir -p module/META-INF/com/google/android
           mkdir -p module/system
-
-          # Copy all built binaries
           for dir in artifacts/*; do
             if [ -d "$dir" ]; then
               cp -r "$dir"/* module/system/bin/ 2>/dev/null || true
             fi
           done
 
-          # Create module.prop
-          cat > module/module.prop << EOF
-id=android-busybox-ndk
-name=Android BusyBox NDK
-version=$VERSION
-versionCode=1
-author=GitHub Actions
-description=BusyBox $VERSION compiled with Android NDK for Magisk
-EOF
-
-      - name: Create Magisk module files
+      - name: Create module.prop
         run: |
-          # Create update-binary
-          cat > module/META-INF/com/google/android/update-binary << 'UPDATER_EOF'
-#!/bin/sh
-umask 022
+          VERSION=${{ github.event.inputs.version || '1.36.1' }}
+          echo "id=android-busybox-ndk" > module/module.prop
+          echo "name=Android BusyBox NDK" >> module/module.prop
+          echo "version=$VERSION" >> module/module.prop
+          echo "versionCode=1" >> module/module.prop
+          echo "author=GitHub Actions" >> module/module.prop
+          echo "description=BusyBox $VERSION compiled with Android NDK for Magisk" >> module/module.prop
 
-ui_print() { echo "$1"; }
-
-ui_print "- Installing BusyBox NDK..."
-
-ARCH=$(getprop ro.product.cpu.abi | cut -d'-' -f1)
-[ -z "$ARCH" ] && ARCH=$(uname -m)
-
-case "$ARCH" in
-    arm*) BUSYBOX="busybox-arm" ;;
-    aarch64*) BUSYBOX="busybox-arm64" ;;
-    i?86*) BUSYBOX="busybox-i686" ;;
-    x86_64*) BUSYBOX="busybox-x86_64" ;;
-    *) ui_print "- Error: Unknown architecture"; exit 1 ;;
-esac
-
-if [ -f "system/bin/${BUSYBOX}/busybox" ]; then
-    cp "system/bin/${BUSYBOX}/busybox" system/bin/busybox
-    chmod 755 system/bin/busybox
-    
-    for applet in $(system/bin/busybox --list); do
-        [ ! -e "system/xbin/$applet" ] && ln -sf busybox "system/xbin/$applet"
-    done
-    ui_print "- Done!"
-else
-    ui_print "- Error: Binary not found"
-    exit 1
-fi
-exit 0
-UPDATER_EOF
+      - name: Create update-binary
+        run: |
+          echo '#!/bin/sh' > module/META-INF/com/google/android/update-binary
+          echo 'umask 022' >> module/META-INF/com/google/android/update-binary
+          echo '' >> module/META-INF/com/google/android/update-binary
+          echo 'ui_print() { echo "$1"; }' >> module/META-INF/com/google/android/update-binary
+          echo '' >> module/META-INF/com/google/android/update-binary
+          echo 'ui_print "- Installing BusyBox NDK..."' >> module/META-INF/com/google/android/update-binary
+          echo '' >> module/META-INF/com/google/android/update-binary
+          echo 'ARCH=$(getprop ro.product.cpu.abi | cut -d"-" -f1)' >> module/META-INF/com/google/android/update-binary
+          echo '[ -z "$ARCH" ] && ARCH=$(uname -m)' >> module/META-INF/com/google/android/update-binary
+          echo '' >> module/META-INF/com/google/android/update-binary
+          echo 'case "$ARCH" in' >> module/META-INF/com/google/android/update-binary
+          echo '    arm*) BUSYBOX="busybox-arm" ;;' >> module/META-INF/com/google/android/update-binary
+          echo '    aarch64*) BUSYBOX="busybox-arm64" ;;' >> module/META-INF/com/google/android/update-binary
+          echo '    i?86*) BUSYBOX="busybox-i686" ;;' >> module/META-INF/com/google/android/update-binary
+          echo '    x86_64*) BUSYBOX="busybox-x86_64" ;;' >> module/META-INF/com/google/android/update-binary
+          echo '    *) ui_print "- Error: Unknown architecture"; exit 1 ;;' >> module/META-INF/com/google/android/update-binary
+          echo 'esac' >> module/META-INF/com/google/android/update-binary
+          echo '' >> module/META-INF/com/google/android/update-binary
+          echo 'if [ -f "system/bin/${BUSYBOX}/busybox" ]; then' >> module/META-INF/com/google/android/update-binary
+          echo '    cp "system/bin/${BUSYBOX}/busybox" system/bin/busybox' >> module/META-INF/com/google/android/update-binary
+          echo '    chmod 755 system/bin/busybox' >> module/META-INF/com/google/android/update-binary
+          echo '    for applet in $(system/bin/busybox --list); do' >> module/META-INF/com/google/android/update-binary
+          echo '        [ ! -e "system/xbin/$applet" ] && ln -sf busybox "system/xbin/$applet"' >> module/META-INF/com/google/android/update-binary
+          echo '    done' >> module/META-INF/com/google/android/update-binary
+          echo '    ui_print "- Done!"' >> module/META-INF/com/google/android/update-binary
+          echo 'else' >> module/META-INF/com/google/android/update-binary
+          echo '    ui_print "- Error: Binary not found"' >> module/META-INF/com/google/android/update-binary
+          echo '    exit 1' >> module/META-INF/com/google/android/update-binary
+          echo 'fi' >> module/META-INF/com/google/android/update-binary
+          echo 'exit 0' >> module/META-INF/com/google/android/update-binary
           chmod 755 module/META-INF/com/google/android/update-binary
 
-          # Create updater-script
-          cat > module/META-INF/com/google/android/updater-script << 'EOF'
-ui_print(" BusyBox NDK Module");
-EOF
+      - name: Create updater-script
+        run: |
+          echo 'ui_print(" BusyBox NDK Module");' > module/META-INF/com/google/android/updater-script
 
-          # Create post-fs-data.sh
-          cat > module/post-fs-data.sh << 'EOF'
-#!/system/bin/sh
-EOF
+      - name: Create post-fs-data.sh
+        run: |
+          echo '#!/system/bin/sh' > module/post-fs-data.sh
           chmod 755 module/post-fs-data.sh
 
-          # Create service.sh
-          cat > module/service.sh << 'EOF'
-#!/system/bin/sh
-EOF
+      - name: Create service.sh
+        run: |
+          echo '#!/system/bin/sh' > module/service.sh
           chmod 755 module/service.sh
 
-          # Create customize.sh
-          cat > module/customize.sh << 'EOF'
-#!/system/bin/sh
-set_perm(0, 0, 0755, "/system/bin/busybox");
-
-if [ -f "/system/bin/busybox" ]; then
-    for applet in $(/system/bin/busybox --list); do
-        [ ! -e "/system/xbin/$applet" ] && ln -sf busybox "/system/xbin/$applet"
-    done
-fi
-EOF
+      - name: Create customize.sh
+        run: |
+          echo '#!/system/bin/sh' > module/customize.sh
+          echo 'set_perm(0, 0, 0755, "/system/bin/busybox");' >> module/customize.sh
+          echo '' >> module/customize.sh
+          echo 'if [ -f "/system/bin/busybox" ]; then' >> module/customize.sh
+          echo '    for applet in $(/system/bin/busybox --list); do' >> module/customize.sh
+          echo '        [ ! -e "/system/xbin/$applet" ] && ln -sf busybox "/system/xbin/$applet"' >> module/customize.sh
+          echo '    done' >> module/customize.sh
+          echo 'fi' >> module/customize.sh
           chmod 755 module/customize.sh
 
       - name: Package module
