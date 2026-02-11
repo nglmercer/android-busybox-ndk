@@ -107,6 +107,18 @@ jobs:
             fi
           done
 
+      - name: Create NDK gcc symlinks
+        run: |
+          # NDK r25c uses clang only, create symlinks for gcc names
+          cd ${{ env.NDK_PATH }}/toolchains/llvm/prebuilt/linux-x86_64/bin
+          for target in aarch64-linux-android21 armv7a-linux-androideabi21 i686-linux-android21 x86_64-linux-android21; do
+            for tool in gcc g++ ar as nm objcopy objdump ranlib strip; do
+              if [ ! -f "${target}-${tool}" ] && [ -f "${target}-clang" ]; then
+                ln -sf ${target}-clang ${target}-${tool}
+              fi
+            done
+          done
+
       - name: Configure BusyBox
         run: |
           cd ${{ runner.workspace }}/busybox-${{ matrix.arch }}

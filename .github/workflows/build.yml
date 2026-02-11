@@ -70,9 +70,9 @@ jobs:
         run: |
           export NDK_ROOT=${{ env.NDK_ROOT }}
           export PATH=$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin:$PATH
-          export CROSS_COMPILE=$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/${{ matrix.triple }}
           export ARCH=${{ matrix.arch }}
           export SYSROOT=$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/sysroot
+          export CROSS_COMPILE=${{ matrix.triple }}
 
           cd ${{ github.workspace }}
           wget -q https://busybox.net/downloads/busybox-${{ env.BUSYBOX_VERSION }}.tar.bz2
@@ -80,10 +80,24 @@ jobs:
           mv busybox-${{ env.BUSYBOX_VERSION }} busybox-build
           cd busybox-build
 
+          # Create symlinks for gcc names pointing to clang (NDK r25c uses clang only)
+          cd $NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin
+          for target in aarch64-linux-android21 armv7a-linux-androideabi21 i686-linux-android21 x86_64-linux-android21; do
+            for tool in gcc g++ ar as nm objcopy objdump ranlib strip; do
+              if [ ! -f "${target}-${tool}" ] && [ -f "${target}-clang" ]; then
+                ln -sf ${target}-clang ${target}-${tool}
+              fi
+            done
+          done
+
+          cd ${{ github.workspace }}/busybox-build
+
           cp ${{ github.workspace }}/osm0sis-basic-unified.config .config
-          sed -i "s|CONFIG_CROSS_COMPILER_PREFIX=\"\"|CONFIG_CROSS_COMPILER_PREFIX=\"${CROSS_COMPILE}\"|g" .config
+          sed -i "s|CONFIG_CROSS_COMPILER_PREFIX=\"\"|CONFIG_CROSS_COMPILER_PREFIX=\"${NDK_ROOT}/toolchains/llvm/prebuilt/linux-x86_64/bin/${CROSS_COMPILE}\"|g" .config
           sed -i "s|CONFIG_SYSROOT=\"\"|CONFIG_SYSROOT=\"${SYSROOT}\"|g" .config
 
+          # Use clang directly for host tools
+          export HOSTCC=gcc
           make -j$(nproc)
           make install
 
