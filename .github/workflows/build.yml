@@ -21,16 +21,16 @@ jobs:
       matrix:
         include:
           - arch: arm
-            triple: arm-linux-androideabi
+            triple: armv7a-linux-androideabi21-
             artifact: busybox-arm
           - arch: arm64
-            triple: aarch64-linux-android
+            triple: aarch64-linux-android21-
             artifact: busybox-arm64
           - arch: x86
-            triple: i686-linux-android
+            triple: i686-linux-android21-
             artifact: busybox-x86
           - arch: x86_64
-            triple: x86_64-linux-android
+            triple: x86_64-linux-android21-
             artifact: busybox-x86_64
 
     steps:
@@ -52,7 +52,7 @@ jobs:
         run: |
           export NDK_ROOT=${{ env.NDK_ROOT }}
           export PATH=$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin:$PATH
-          export CROSS_COMPILE=$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/${{ matrix.triple }}-
+          export CROSS_COMPILE=$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/${{ matrix.triple }}
           export ARCH=${{ matrix.arch }}
           export SYSROOT=$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/sysroot
 
