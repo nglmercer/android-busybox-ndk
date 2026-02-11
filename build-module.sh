@@ -1,13 +1,18 @@
 #!/bin/bash
 # Build script for Android BusyBox NDK Magisk Module
-# Usage: ./build-module.sh [arch] [version]
+# Usage: ./build-module.sh [version] [arch]
 
 set -e
 
+# Script directory (must be at top)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export SCRIPT_DIR
+
 # Configuration
 BUSYBOX_VERSION="${1:-1.36.1}"
-NDK_PATH="${NDK_PATH:-/opt/android-ndk}"
-OUT_DIR="${OUT_DIR:-./output}"
+NDK_VERSION="r25c"
+NDK_PATH="${NDK_PATH:-${SCRIPT_DIR}/android-ndk-${NDK_VERSION}}"
+OUT_DIR="${OUT_DIR:-${SCRIPT_DIR}/output}"
 MODULE_DIR="${OUT_DIR}/module"
 
 # Architectures to build
@@ -36,9 +41,57 @@ cleanup() {
     rm -rf "${OUT_DIR}"
 }
 
+detect_ndk_prebuilt() {
+    # Detect the prebuilt directory based on OS and architecture
+    local os=$(uname -s | tr '[:upper:]' '[:lower:]')
+    local arch=$(uname -m)
+    
+    case "${os}-${arch}" in
+        linux-x86_64)
+            echo "linux-x86_64"
+            ;;
+        linux-aarch64|linux-arm64)
+            echo "linux-aarch64"
+            ;;
+        darwin-x86_64)
+            echo "darwin-x86_64"
+            ;;
+        darwin-arm64|darwin-aarch64)
+            echo "darwin-arm64"
+            ;;
+        *)
+            log_warn "Unknown platform: ${os}-${arch}, defaulting to linux-x86_64"
+            echo "linux-x86_64"
+            ;;
+    esac
+}
+
+download_ndk() {
+    if [ ! -d "${NDK_PATH}" ]; then
+        log_info "Downloading Android NDK ${NDK_VERSION}..."
+        local os=$(uname -s | tr '[:upper:]' '[:lower:]')
+        local ndk_zip="android-ndk-${NDK_VERSION}-${os}.zip"
+        
+        if [ ! -f "${ndk_zip}" ]; then
+            wget -q "https://dl.google.com/android/repository/${ndk_zip}"
+        fi
+        
+        log_info "Extracting NDK..."
+        unzip -q "${ndk_zip}"
+        
+        # Rename to expected path if needed
+        if [ -d "android-ndk-${NDK_VERSION}" ] && [ "android-ndk-${NDK_VERSION}" != "${NDK_PATH}" ]; then
+            mv "android-ndk-${NDK_VERSION}" "${NDK_PATH}"
+        fi
+    else
+        log_info "NDK already exists at ${NDK_PATH}"
+    fi
+}
+
 setup_ndk_symlinks() {
     log_info "Setting up NDK symlinks..."
-    local ndk_bin="${NDK_PATH}/toolchains/llvm/prebuilt/linux-x86_64/bin"
+    local prebuilt_dir=$(detect_ndk_prebuilt)
+    local ndk_bin="${NDK_PATH}/toolchains/llvm/prebuilt/${prebuilt_dir}/bin"
     cd "${ndk_bin}"
     
     # Create symlinks for cross-compilation tools (using llvm tools)
@@ -103,8 +156,9 @@ build_arch() {
     done
     
     # Configure
-    local cross_compile="${NDK_PATH}/toolchains/llvm/prebuilt/linux-x86_64/bin/${triple}"
-    local sysroot="${NDK_PATH}/toolchains/llvm/prebuilt/linux-x86_64/sysroot"
+    local prebuilt_dir=$(detect_ndk_prebuilt)
+    local cross_compile="${NDK_PATH}/toolchains/llvm/prebuilt/${prebuilt_dir}/bin/${triple}"
+    local sysroot="${NDK_PATH}/toolchains/llvm/prebuilt/${prebuilt_dir}/sysroot"
     
     sed -i "s|CONFIG_CROSS_COMPILER_PREFIX=\"\"|CONFIG_CROSS_COMPILER_PREFIX=\"${cross_compile}\"|g" .config
     sed -i 's|CONFIG_EXTRA_CFLAGS=.*|CONFIG_EXTRA_CFLAGS="-DANDROID -D__ANDROID__ -D__ANDROID_API__=21 -Os"|g' .config
@@ -262,10 +316,8 @@ package_module() {
 }
 
 # Main execution
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-export SCRIPT_DIR
-
 cleanup
+download_ndk
 setup_ndk_symlinks
 mkdir -p "${OUT_DIR}"
 

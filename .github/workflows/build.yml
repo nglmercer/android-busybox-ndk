@@ -11,10 +11,17 @@ on:
         required: true
         default: '1.36.1'
 
+env:
+  NDK_VERSION: r25c
+  BUSYBOX_VERSION: ${{ github.event.inputs.version || '1.36.1' }}
+
 jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: read
 
     strategy:
       fail-fast: false
@@ -42,11 +49,22 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential git wget zip
 
+      - name: Cache Android NDK
+        id: cache-ndk
+        uses: actions/cache@v4
+        with:
+          path: android-ndk-${{ env.NDK_VERSION }}-linux.zip
+          key: ndk-${{ env.NDK_VERSION }}-${{ runner.os }}
+
       - name: Download Android NDK
+        if: steps.cache-ndk.outputs.cache-hit != 'true'
         run: |
-          wget -q https://dl.google.com/android/repository/android-ndk-r25c-linux.zip
-          unzip -q android-ndk-r25c-linux.zip
-          echo "NDK_ROOT=${{ github.workspace }}/android-ndk-r25c" >> $GITHUB_ENV
+          wget -q https://dl.google.com/android/repository/android-ndk-${{ env.NDK_VERSION }}-linux.zip
+
+      - name: Extract Android NDK
+        run: |
+          unzip -q android-ndk-${{ env.NDK_VERSION }}-linux.zip
+          echo "NDK_ROOT=${{ github.workspace }}/android-ndk-${{ env.NDK_VERSION }}" >> $GITHUB_ENV
 
       - name: Build BusyBox for ${{ matrix.arch }}
         run: |
@@ -56,11 +74,10 @@ jobs:
           export ARCH=${{ matrix.arch }}
           export SYSROOT=$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/sysroot
 
-          VERSION=${{ github.event.inputs.version || '1.36.1' }}
           cd ${{ github.workspace }}
-          wget -q https://busybox.net/downloads/busybox-${VERSION}.tar.bz2
-          tar -xjf busybox-${VERSION}.tar.bz2
-          mv busybox-${VERSION} busybox-build
+          wget -q https://busybox.net/downloads/busybox-${{ env.BUSYBOX_VERSION }}.tar.bz2
+          tar -xjf busybox-${{ env.BUSYBOX_VERSION }}.tar.bz2
+          mv busybox-${{ env.BUSYBOX_VERSION }} busybox-build
           cd busybox-build
 
           cp ${{ github.workspace }}/osm0sis-basic-unified.config .config
@@ -82,6 +99,10 @@ jobs:
   package:
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: read
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -93,7 +114,6 @@ jobs:
 
       - name: Set up module structure
         run: |
-          VERSION=${{ github.event.inputs.version || '1.36.1' }}
           mkdir -p module/system/bin
           mkdir -p module/META-INF/com/google/android
           mkdir -p module/system
@@ -105,13 +125,12 @@ jobs:
 
       - name: Create module.prop
         run: |
-          VERSION=${{ github.event.inputs.version || '1.36.1' }}
           echo "id=android-busybox-ndk" > module/module.prop
           echo "name=Android BusyBox NDK" >> module/module.prop
-          echo "version=$VERSION" >> module/module.prop
+          echo "version=${{ env.BUSYBOX_VERSION }}" >> module/module.prop
           echo "versionCode=1" >> module/module.prop
           echo "author=GitHub Actions" >> module/module.prop
-          echo "description=BusyBox $VERSION compiled with Android NDK for Magisk" >> module/module.prop
+          echo "description=BusyBox ${{ env.BUSYBOX_VERSION }} compiled with Android NDK for Magisk" >> module/module.prop
 
       - name: Create update-binary
         run: |
@@ -175,10 +194,9 @@ jobs:
 
       - name: Package module
         run: |
-          VERSION=${{ github.event.inputs.version || '1.36.1' }}
           cd module
-          zip -r ../android-busybox-ndk-v${VERSION}.zip .
-          mv ../android-busybox-ndk-v${VERSION}.zip ../
+          zip -r ../android-busybox-ndk-v${{ env.BUSYBOX_VERSION }}.zip .
+          mv ../android-busybox-ndk-v${{ env.BUSYBOX_VERSION }}.zip ../
           cd ..
 
       - name: Upload release asset
@@ -193,7 +211,7 @@ jobs:
         with:
           files: android-busybox-ndk-v*.zip
           body: |
-            ## Android BusyBox NDK Magisk Module v${{ github.event.inputs.version || '1.36.1' }}
+            ## Android BusyBox NDK Magisk Module v${{ env.BUSYBOX_VERSION }}
 
             **Install via Magisk:**
             1. Download the ZIP below
