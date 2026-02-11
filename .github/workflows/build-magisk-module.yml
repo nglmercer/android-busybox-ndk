@@ -24,7 +24,6 @@ env:
 jobs:
   build:
     runs-on: ubuntu-latest
-    container: ubuntu:22.04
     permissions:
       contents: read
       packages: read
@@ -49,8 +48,8 @@ jobs:
 
       - name: Install dependencies
         run: |
-          apt-get update
-          apt-get install -y \
+          sudo apt-get update
+          sudo apt-get install -y \
             build-essential \
             git \
             wget \
@@ -109,20 +108,14 @@ jobs:
 
       - name: Clone BusyBox
         run: |
-          cd "${{ runner.workspace }}"
+          cd "${{ github.workspace }}/.."
           wget -q https://busybox.net/downloads/busybox-${{ env.BUSYBOX_VERSION }}.tar.bz2
           tar -xjf busybox-${{ env.BUSYBOX_VERSION }}.tar.bz2
           mv busybox-${{ env.BUSYBOX_VERSION }} busybox-${{ matrix.arch }}
-          cd busybox-${{ matrix.arch }}
-          git init
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git config user.name "github-actions[bot]"
-          git add .
-          git commit -m "Initial import of BusyBox ${{ env.BUSYBOX_VERSION }}"
 
       - name: Apply patches
         run: |
-          cd "${{ runner.workspace }}/busybox-${{ matrix.arch }}"
+          cd "${{ github.workspace }}/../busybox-${{ matrix.arch }}"
           cp "${{ github.workspace }}/osm0sis-basic-unified.config" .config
           for patch in "${{ github.workspace }}"/patches/*.patch; do
             if [ -f "$patch" ]; then
@@ -132,7 +125,7 @@ jobs:
 
       - name: Configure BusyBox
         run: |
-          cd "${{ runner.workspace }}/busybox-${{ matrix.arch }}"
+          cd "${{ github.workspace }}/../busybox-${{ matrix.arch }}"
           CROSS_COMPILE="${{ env.NDK_PATH }}/toolchains/llvm/prebuilt/linux-x86_64/bin/${{ matrix.triple }}"
           echo "CROSS_COMPILE=$CROSS_COMPILE" >> $GITHUB_ENV
           sed -i "s|CONFIG_CROSS_COMPILER_PREFIX=\"\"|CONFIG_CROSS_COMPILER_PREFIX=\"${CROSS_COMPILE}\"|g" .config
@@ -145,7 +138,7 @@ jobs:
 
       - name: Build BusyBox
         run: |
-          cd "${{ runner.workspace }}/busybox-${{ matrix.arch }}"
+          cd "${{ github.workspace }}/../busybox-${{ matrix.arch }}"
           export CROSS_COMPILE="${{ env.CROSS_COMPILE }}"
           export ARCH="${{ matrix.arch }}"
           make -j$(nproc)
@@ -153,15 +146,15 @@ jobs:
 
       - name: Create directory structure for Magisk module
         run: |
-          mkdir -p "${{ runner.workspace }}"/module/${{ matrix.arch }}
-          cd "${{ runner.workspace }}/busybox-${{ matrix.arch }}/_install"
-          cp -r * "${{ runner.workspace }}/module/${{ matrix.arch }}"/
+          mkdir -p "${{ github.workspace }}/../"/module/${{ matrix.arch }}
+          cd "${{ github.workspace }}/../busybox-${{ matrix.arch }}/_install"
+          cp -r * "${{ github.workspace }}/../"/module/${{ matrix.arch }}/
 
       - name: Upload artifact for ${{ matrix.arch }}
         uses: actions/upload-artifact@v4
         with:
           name: busybox-${{ matrix.arch }}
-          path: "${{ runner.workspace }}/module/${{ matrix.arch }}"
+          path: "${{ github.workspace }}/../module/${{ matrix.arch }}"
 
   package:
     needs: build
