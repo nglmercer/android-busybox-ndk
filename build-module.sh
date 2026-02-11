@@ -39,12 +39,15 @@ cleanup() {
 setup_ndk_symlinks() {
     log_info "Setting up NDK symlinks..."
     local ndk_bin="${NDK_PATH}/toolchains/llvm/prebuilt/linux-x86_64/bin"
+    cd "${ndk_bin}"
     
-    # Create symlinks for cross-compilation tools
-    for tool in ar as nm objcopy objdump ranlib strip ld.bfd ld.gold; do
+    # Create symlinks for cross-compilation tools (using llvm tools)
+    for tool in llvm-ar llvm-as llvm-nm llvm-objcopy llvm-objdump llvm-ranlib llvm-strip; do
+        base=$(basename "$tool")
+        tool_name=${base#llvm-}  # Remove 'llvm-' prefix
         for target in aarch64-linux-android21 armv7a-linux-androideabi21 i686-linux-android21 x86_64-linux-android21; do
-            if [ -f "${ndk_bin}/${tool}" ] && [ ! -f "${ndk_bin}/${target}-${tool}" ]; then
-                ln -sf "${tool}" "${ndk_bin}/${target}-${tool}"
+            if [ -f "${tool}" ] && [ ! -f "${target}-${tool_name}" ]; then
+                ln -sf "${PWD}/${tool}" "${target}-${tool_name}"
             fi
         done
     done
