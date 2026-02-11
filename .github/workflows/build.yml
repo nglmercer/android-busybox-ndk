@@ -222,7 +222,6 @@ jobs:
         run: |
           cd module
           zip -r ../android-busybox-ndk-v${{ env.BUSYBOX_VERSION }}.zip .
-          mv ../android-busybox-ndk-v${{ env.BUSYBOX_VERSION }}.zip ../
           cd ..
 
       - name: Upload release asset

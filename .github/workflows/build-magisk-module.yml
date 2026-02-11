@@ -80,8 +80,23 @@ jobs:
 
       - name: Setup Android NDK
         run: |
-          unzip -q android-ndk-${{ env.NDK_VERSION }}-linux.zip -d "${{ runner.workspace }}"
-          NDK_PATH="${{ runner.workspace }}/android-ndk-${{ env.NDK_VERSION }}"
+          unzip -q android-ndk-${{ env.NDK_VERSION }}-linux.zip
+          NDK_PATH="${{ github.workspace }}/android-ndk-${{ env.NDK_VERSION }}"
+          echo "NDK_PATH=$NDK_PATH" >> $GITHUB_ENV
+          echo "ANDROID_NDK_HOME=$NDK_PATH" >> $GITHUB_ENV
+
+      - name: Create NDK gcc symlinks
+        run: |
+          # NDK r25c uses clang only, create symlinks for gcc names
+          NDK_BIN="${{ env.NDK_PATH }}/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          cd "$NDK_BIN"# ... (keeping the rest of symlinks setup implicitly by context if not changing) but wait, replace_file_content expects exact chunks.
+          # To avoid re-writing the whole symlink block which is fine, I will just target the specific blocks.
+
+# Chunk 1: Setup NDK
+      - name: Setup Android NDK
+        run: |
+          unzip -q android-ndk-${{ env.NDK_VERSION }}-linux.zip
+          NDK_PATH="${{ github.workspace }}/android-ndk-${{ env.NDK_VERSION }}"
           echo "NDK_PATH=$NDK_PATH" >> $GITHUB_ENV
           echo "ANDROID_NDK_HOME=$NDK_PATH" >> $GITHUB_ENV
 
@@ -281,20 +296,20 @@ jobs:
           VERSION=$(echo ${{ github.ref_name }} | sed 's/v//')
           ARCHIVE_NAME="android-busybox-ndk-v${VERSION}-${GITHUB_SHA:0:7}.zip"
           zip -r "$ARCHIVE_NAME" .
-          mv "$ARCHIVE_NAME" ${{ runner.workspace }}
+          mv "$ARCHIVE_NAME" "${{ github.workspace }}"
           echo "ARCHIVE_NAME=$ARCHIVE_NAME" >> $GITHUB_ENV
 
       - name: Upload release artifact
         uses: actions/upload-artifact@v4
         with:
           name: release
-          path: ${{ runner.workspace }}/${{ env.ARCHIVE_NAME }}
+          path: ${{ github.workspace }}/${{ env.ARCHIVE_NAME }}
 
       - name: Create Release
         if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: ${{ runner.workspace }}/${{ env.ARCHIVE_NAME }}
+          files: ${{ github.workspace }}/${{ env.ARCHIVE_NAME }}
           body: |
             ## Android BusyBox NDK Magisk Module
 
@@ -316,4 +331,4 @@ jobs:
         run: |
           echo "Build complete!"
           echo "Archive: ${{ env.ARCHIVE_NAME }}"
-          ls -lh ${{ runner.workspace }}/${{ env.ARCHIVE_NAME }}
+          ls -lh ${{ github.workspace }}/${{ env.ARCHIVE_NAME }}
