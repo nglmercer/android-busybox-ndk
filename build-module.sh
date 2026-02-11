@@ -86,7 +86,7 @@ build_arch() {
     done
     
     # Configure
-    local cross_compile="${NDK_PATH}/toolchains/llvm/prebuilt/linux-x86_64/bin/${triple}21-"
+    local cross_compile="${NDK_PATH}/toolchains/llvm/prebuilt/linux-x86_64/bin/${triple}-"
     local sysroot="${NDK_PATH}/toolchains/llvm/prebuilt/linux-x86_64/sysroot"
     
     sed -i "s|CONFIG_CROSS_COMPILER_PREFIX=\"\"|CONFIG_CROSS_COMPILER_PREFIX=\"${cross_compile}\"|g" .config
