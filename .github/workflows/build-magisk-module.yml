@@ -98,10 +98,13 @@ jobs:
           cd ${{ runner.workspace }}/busybox-${{ matrix.arch }}
           CROSS_COMPILE="${{ env.NDK_PATH }}/toolchains/llvm/prebuilt/linux-x86_64/bin/${{ matrix.triple }}"
           echo "CROSS_COMPILE=$CROSS_COMPILE" >> $GITHUB_ENV
-          sed -i "s|CONFIG_CROSS_COMPILER_PREFIX=\"\"|CONFIG_CROSS_COMPILER_PREFIX=\"$CROSS_COMPILE\"|g" .config
-          sed -i "s|CONFIG_EXTRA_CFLAGS=\"-DANDROID.*\"|CONFIG_EXTRA_CFLAGS=\"-DANDROID -D__ANDROID__ -D__ANDROID_API__=21 -Os -fno-short-enums -fgcse-after-reload -frename-registers\"|g" .config
+          sed -i 's|CONFIG_CROSS_COMPILER_PREFIX=""|CONFIG_CROSS_COMPILER_PREFIX="'$CROSS_COMPILE'"|g' .config
+          sed -i 's|CONFIG_EXTRA_CFLAGS=.*|CONFIG_EXTRA_CFLAGS="-DANDROID -D__ANDROID__ -D__ANDROID_API__=21 -Os"|g' .config
+          sed -i 's|CONFIG_EXTRA_LDFLAGS=.*|CONFIG_EXTRA_LDFLAGS=""|g' .config
+          sed -i 's|CONFIG_STATIC=y|# CONFIG_STATIC is not set|g' .config
+          sed -i 's|CONFIG_STATIC_LIBGCC=y|# CONFIG_STATIC_LIBGCC is not set|g' .config
           SYSROOT="${{ env.NDK_PATH }}/toolchains/llvm/prebuilt/linux-x86_64/sysroot"
-          sed -i "s|CONFIG_SYSROOT=\"\"|CONFIG_SYSROOT=\"$SYSROOT\"|g" .config
+          sed -i 's|CONFIG_SYSROOT=""|CONFIG_SYSROOT="'$SYSROOT'"|g' .config
 
       - name: Build BusyBox
         run: |

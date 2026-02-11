@@ -107,6 +107,10 @@ build_arch() {
     local sysroot="${NDK_PATH}/toolchains/llvm/prebuilt/linux-x86_64/sysroot"
     
     sed -i "s|CONFIG_CROSS_COMPILER_PREFIX=\"\"|CONFIG_CROSS_COMPILER_PREFIX=\"${cross_compile}\"|g" .config
+    sed -i 's|CONFIG_EXTRA_CFLAGS=.*|CONFIG_EXTRA_CFLAGS="-DANDROID -D__ANDROID__ -D__ANDROID_API__=21 -Os"|g' .config
+    sed -i 's|CONFIG_EXTRA_LDFLAGS=.*|CONFIG_EXTRA_LDFLAGS=""|g' .config
+    sed -i 's|CONFIG_STATIC=y|# CONFIG_STATIC is not set|g' .config
+    sed -i 's|CONFIG_STATIC_LIBGCC=y|# CONFIG_STATIC_LIBGCC is not set|g' .config
     sed -i "s|CONFIG_SYSROOT=\"\"|CONFIG_SYSROOT=\"${sysroot}\"|g" .config
     
     # Build
