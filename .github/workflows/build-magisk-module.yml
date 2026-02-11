@@ -146,15 +146,15 @@ jobs:
 
       - name: Create directory structure for Magisk module
         run: |
-          mkdir -p "${{ github.workspace }}/../"/module/${{ matrix.arch }}
+          mkdir -p "${{ github.workspace }}/module/${{ matrix.arch }}"
           cd "${{ github.workspace }}/../busybox-${{ matrix.arch }}/_install"
-          cp -r * "${{ github.workspace }}/../"/module/${{ matrix.arch }}/
+          cp -r * "${{ github.workspace }}/module/${{ matrix.arch }}/"
 
       - name: Upload artifact for ${{ matrix.arch }}
         uses: actions/upload-artifact@v4
         with:
           name: busybox-${{ matrix.arch }}
-          path: "${{ github.workspace }}/../module/${{ matrix.arch }}"
+          path: "${{ github.workspace }}/module/${{ matrix.arch }}"
 
   package:
     needs: build
