@@ -200,8 +200,9 @@ description=BusyBox ${BUSYBOX_VERSION} compiled with Android NDK for Magisk
 EOF
 
     # Create update-binary (standard Magisk boilerplate)
+    mkdir -p "${MODULE_DIR}/META-INF/com/google/android"
     cat > "${MODULE_DIR}/META-INF/com/google/android/update-binary" << 'UPDATER_EOF'
-#!/stow/bin/sh
+#!/system/bin/sh
 # Magisk update-binary (dummy, customize.sh handles the work)
 exit 0
 UPDATER_EOF

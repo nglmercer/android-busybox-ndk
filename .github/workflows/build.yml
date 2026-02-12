@@ -140,6 +140,7 @@ jobs:
 
       - name: Set up module structure
         run: |
+          mkdir -p module/META-INF/com/google/android
           mkdir -p module/custom
           for dir in artifacts/*; do
             if [ -d "$dir" ]; then
@@ -160,7 +161,7 @@ jobs:
 
       - name: Create update-binary
         run: |
-          echo '#!/stow/bin/sh' > module/META-INF/com/google/android/update-binary
+          echo '#!/system/bin/sh' > module/META-INF/com/google/android/update-binary
           echo 'exit 0' >> module/META-INF/com/google/android/update-binary
           chmod 755 module/META-INF/com/google/android/update-binary
 
@@ -210,16 +211,12 @@ jobs:
           echo '' >> module/customize.sh
           echo '# Create symlinks' >> module/customize.sh
           echo 'ui_print "- Creating applet symlinks..."' >> module/customize.sh
-          echo 'for applet in "$MODPATH/system/bin/busybox" --list; do' >> module/customize.sh
-          echo '    appList=$("$MODPATH/system/bin/busybox" --list)' >> module/customize.sh
-          echo '    for a in $appList; do' >> module/customize.sh
-          echo '        if [ "$a" != "busybox" ]; then' >> module/customize.sh
-          echo '            ln -sf busybox "$MODPATH/system/bin/$a"' >> module/customize.sh
-          echo '        fi' >> module/customize.sh
-          echo '    done' >> module/customize.sh
-          echo '    break' >> module/customize.sh
+          echo 'applist=$("$MODPATH/system/bin/busybox" --list)' >> module/customize.sh
+          echo 'for a in $applist; do' >> module/customize.sh
+          echo '    if [ "$a" != "busybox" ]; then' >> module/customize.sh
+          echo '        ln -sf busybox "$MODPATH/system/bin/$a"' >> module/customize.sh
+          echo '    fi' >> module/customize.sh
           echo 'done' >> module/customize.sh
-          echo 'fi' >> module/customize.sh
           chmod 755 module/customize.sh
 
       - name: Package module

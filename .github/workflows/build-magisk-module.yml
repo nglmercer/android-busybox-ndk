@@ -172,6 +172,7 @@ jobs:
 
       - name: Create Magisk module structure
         run: |
+          mkdir -p module/META-INF/com/google/android
           mkdir -p module/custom
           for arch_path in artifacts/busybox-*; do
             arch_name=$(basename "$arch_path" | sed 's/busybox-//')
@@ -191,7 +192,7 @@ jobs:
 
       - name: Create update-binary
         run: |
-          echo '#!/stow/bin/sh' > module/META-INF/com/google/android/update-binary
+          echo '#!/system/bin/sh' > module/META-INF/com/google/android/update-binary
           echo 'exit 0' >> module/META-INF/com/google/android/update-binary
           chmod +x module/META-INF/com/google/android/update-binary
 
