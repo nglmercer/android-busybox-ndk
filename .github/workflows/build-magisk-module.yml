@@ -84,8 +84,6 @@ jobs:
           echo "NDK_PATH=$NDK_PATH" >> $GITHUB_ENV
           echo "ANDROID_NDK_HOME=$NDK_PATH" >> $GITHUB_ENV
 
-
-
       - name: Create NDK gcc symlinks
         run: |
           # NDK r25c uses clang only, create symlinks for gcc names
@@ -130,7 +128,7 @@ jobs:
           echo "CROSS_COMPILE=$CROSS_COMPILE" >> $GITHUB_ENV
           sed -i "s|CONFIG_CROSS_COMPILER_PREFIX=\"\"|CONFIG_CROSS_COMPILER_PREFIX=\"${CROSS_COMPILE}\"|g" .config
           sed -i 's|CONFIG_EXTRA_CFLAGS=.*|CONFIG_EXTRA_CFLAGS="-DANDROID -D__ANDROID__ -D__ANDROID_API__=21 -Os"|g' .config
-          sed -i 's|CONFIG_EXTRA_LDFLAGS=.*|CONFIG_EXTRA_LDFLAGS=""|g' .config
+          sed -i 's|CONFIG_EXTRA_LDFLAGS=.*|CONFIG_EXTRA_LDFLAGS="-Wl,-z,max-page-size=16384"|g' .config
           sed -i 's|CONFIG_STATIC=y|# CONFIG_STATIC is not set|g' .config
           sed -i 's|CONFIG_STATIC_LIBGCC=y|# CONFIG_STATIC_LIBGCC is not set|g' .config
           SYSROOT="${{ env.NDK_PATH }}/toolchains/llvm/prebuilt/linux-x86_64/sysroot"
@@ -174,12 +172,11 @@ jobs:
 
       - name: Create Magisk module structure
         run: |
-          mkdir -p module/system/bin
-          mkdir -p module/system/etc
-          mkdir -p module/META-INF/com/google/android
           mkdir -p module/custom
-          for arch_dir in artifacts/busybox-*; do
-            cp -r "$arch_dir"/* module/ 2>/dev/null || true
+          for arch_path in artifacts/busybox-*; do
+            arch_name=$(basename "$arch_path" | sed 's/busybox-//')
+            mkdir -p "module/custom/$arch_name"
+            cp -r "$arch_path"/* "module/custom/$arch_name/"
           done
 
       - name: Create module.prop
@@ -194,40 +191,7 @@ jobs:
 
       - name: Create update-binary
         run: |
-          echo '#!/bin/sh' > module/META-INF/com/google/android/update-binary
-          echo 'umask 022' >> module/META-INF/com/google/android/update-binary
-          echo '' >> module/META-INF/com/google/android/update-binary
-          echo 'ui_print() { echo "$1"; }' >> module/META-INF/com/google/android/update-binary
-          echo '' >> module/META-INF/com/google/android/update-binary
-          echo 'ui_print "- Installing BusyBox module..."' >> module/META-INF/com/google/android/update-binary
-          echo '' >> module/META-INF/com/google/android/update-binary
-          echo 'ARCH=$(getprop ro.product.cpu.abi | cut -d"-" -f1)' >> module/META-INF/com/google/android/update-binary
-          echo 'if [ -z "$ARCH" ]; then' >> module/META-INF/com/google/android/update-binary
-          echo '    ARCH=$(uname -m)' >> module/META-INF/com/google/android/update-binary
-          echo 'fi' >> module/META-INF/com/google/android/update-binary
-          echo '' >> module/META-INF/com/google/android/update-binary
-          echo 'case "$ARCH" in' >> module/META-INF/com/google/android/update-binary
-          echo '    arm*) BUSYBOX_PATH="system/bin/arm/busybox" ;;' >> module/META-INF/com/google/android/update-binary
-          echo '    aarch64*) BUSYBOX_PATH="system/bin/arm64/busybox" ;;' >> module/META-INF/com/google/android/update-binary
-          echo '    i?86*) BUSYBOX_PATH="system/bin/x86/busybox" ;;' >> module/META-INF/com/google/android/update-binary
-          echo '    x86_64*) BUSYBOX_PATH="system/bin/x86_64/busybox" ;;' >> module/META-INF/com/google/android/update-binary
-          echo '    *) ui_print "- Error: Unknown architecture: $ARCH"; exit 1 ;;' >> module/META-INF/com/google/android/update-binary
-          echo 'esac' >> module/META-INF/com/google/android/update-binary
-          echo '' >> module/META-INF/com/google/android/update-binary
-          echo 'if [ -f "$BUSYBOX_PATH" ]; then' >> module/META-INF/com/google/android/update-binary
-          echo '    cp "$BUSYBOX_PATH" /system/bin/busybox' >> module/META-INF/com/google/android/update-binary
-          echo '    chmod 755 /system/bin/busybox' >> module/META-INF/com/google/android/update-binary
-          echo '    for applet in $(/system/bin/busybox --list); do' >> module/META-INF/com/google/android/update-binary
-          echo '        if [ ! -e "/system/bin/$applet" ] && [ ! -e "/system/xbin/$applet" ]; then' >> module/META-INF/com/google/android/update-binary
-          echo '            ln -sf busybox "/system/xbin/$applet" 2>/dev/null || true' >> module/META-INF/com/google/android/update-binary
-          echo '        fi' >> module/META-INF/com/google/android/update-binary
-          echo '    done' >> module/META-INF/com/google/android/update-binary
-          echo '    ui_print "- Done!"' >> module/META-INF/com/google/android/update-binary
-          echo 'else' >> module/META-INF/com/google/android/update-binary
-          echo '    ui_print "- Error: BusyBox binary not found at $BUSYBOX_PATH"' >> module/META-INF/com/google/android/update-binary
-          echo '    exit 1' >> module/META-INF/com/google/android/update-binary
-          echo 'fi' >> module/META-INF/com/google/android/update-binary
-          echo '' >> module/META-INF/com/google/android/update-binary
+          echo '#!/stow/bin/sh' > module/META-INF/com/google/android/update-binary
           echo 'exit 0' >> module/META-INF/com/google/android/update-binary
           chmod +x module/META-INF/com/google/android/update-binary
 
@@ -255,19 +219,44 @@ jobs:
       - name: Create customize.sh
         run: |
           echo '#!/system/bin/sh' > module/customize.sh
-          echo '# Custom installation script' >> module/customize.sh
+          echo '# Custom installation script for Magisk' >> module/customize.sh
+          echo '' >> module/customize.sh
+          echo '# Detect architecture' >> module/customize.sh
+          echo 'case $ARCH in' >> module/customize.sh
+          echo '  arm)     ARCH_DIR="arm" ;;' >> module/customize.sh
+          echo '  arm64)   ARCH_DIR="arm64" ;;' >> module/customize.sh
+          echo '  x86)     ARCH_DIR="x86" ;;' >> module/customize.sh
+          echo '  x64)     ARCH_DIR="x86_64" ;;' >> module/customize.sh
+          echo '  *)       ARCH_DIR="arm64" ;;' >> module/customize.sh
+          echo 'esac' >> module/customize.sh
+          echo '' >> module/customize.sh
+          echo 'ui_print "- Architecture detected: $ARCH"' >> module/customize.sh
+          echo 'ui_print "- Installing BusyBox for $ARCH_DIR..."' >> module/customize.sh
+          echo '' >> module/customize.sh
+          echo 'if [ ! -d "$MODPATH/custom/$ARCH_DIR" ]; then' >> module/customize.sh
+          echo '    ui_print "! Error: Binary for $ARCH_DIR not found in module"' >> module/customize.sh
+          echo '    abort' >> module/customize.sh
+          echo 'fi' >> module/customize.sh
+          echo '' >> module/customize.sh
+          echo '# Move content to system/bin' >> module/customize.sh
+          echo 'mkdir -p "$MODPATH/system/bin"' >> module/customize.sh
+          echo 'cp -af "$MODPATH/custom/$ARCH_DIR/." "$MODPATH/system/bin/"' >> module/customize.sh
+          echo 'rm -rf "$MODPATH/custom"' >> module/customize.sh
           echo '' >> module/customize.sh
           echo '# Set permissions' >> module/customize.sh
-          echo 'set_perm(0, 0, 0755, "/system/bin/busybox");' >> module/customize.sh
+          echo 'set_perm 0 0 0755 "$MODPATH/system/bin/busybox"' >> module/customize.sh
           echo '' >> module/customize.sh
-          echo '# Create symlinks for all applets' >> module/customize.sh
-          echo 'if [ -f "/system/bin/busybox" ]; then' >> module/customize.sh
-          echo '    for applet in $(/system/bin/busybox --list); do' >> module/customize.sh
-          echo '        if [ ! -e "/system/bin/$applet" ] && [ ! -e "/system/xbin/$applet" ]; then' >> module/customize.sh
-          echo '            ln -sf /system/bin/busybox /system/xbin/$applet 2>/dev/null' >> module/customize.sh
+          echo '# Create symlinks' >> module/customize.sh
+          echo 'ui_print "- Creating applet symlinks..."' >> module/customize.sh
+          echo 'for applet in "$MODPATH/system/bin/busybox" --list; do' >> module/customize.sh
+          echo '    appList=$("$MODPATH/system/bin/busybox" --list)' >> module/customize.sh
+          echo '    for a in $appList; do' >> module/customize.sh
+          echo '        if [ "$a" != "busybox" ]; then' >> module/customize.sh
+          echo '            ln -sf busybox "$MODPATH/system/bin/$a"' >> module/customize.sh
           echo '        fi' >> module/customize.sh
           echo '    done' >> module/customize.sh
-          echo 'fi' >> module/customize.sh
+          echo '    break' >> module/customize.sh
+          echo 'done' >> module/customize.sh
           chmod +x module/customize.sh
 
       - name: Create zip archive
@@ -295,7 +284,7 @@ jobs:
             ## Android BusyBox NDK Magisk Module
 
             Pre-built Magisk module containing BusyBox compiled with Android NDK.
-            
+
             **Version:** ${{ env.BUSYBOX_VERSION }}
             **Build:** ${{ github.sha }}
 

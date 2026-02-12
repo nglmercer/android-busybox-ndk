@@ -162,7 +162,7 @@ build_arch() {
     
     sed -i "s|CONFIG_CROSS_COMPILER_PREFIX=\"\"|CONFIG_CROSS_COMPILER_PREFIX=\"${cross_compile}\"|g" .config
     sed -i 's|CONFIG_EXTRA_CFLAGS=.*|CONFIG_EXTRA_CFLAGS="-DANDROID -D__ANDROID__ -D__ANDROID_API__=21 -Os"|g' .config
-    sed -i 's|CONFIG_EXTRA_LDFLAGS=.*|CONFIG_EXTRA_LDFLAGS=""|g' .config
+    sed -i 's|CONFIG_EXTRA_LDFLAGS=.*|CONFIG_EXTRA_LDFLAGS="-Wl,-z,max-page-size=16384"|g' .config
     sed -i 's|CONFIG_STATIC=y|# CONFIG_STATIC is not set|g' .config
     sed -i 's|CONFIG_STATIC_LIBGCC=y|# CONFIG_STATIC_LIBGCC is not set|g' .config
     sed -i "s|CONFIG_SYSROOT=\"\"|CONFIG_SYSROOT=\"${sysroot}\"|g" .config
@@ -175,8 +175,8 @@ build_arch() {
     make -j$(nproc)
     make install
     
-    # Copy to module directory
-    install_dir="${MODULE_DIR}/system/bin/${arch}"
+    # Copy to module directory (use a temp path for architecture selection)
+    install_dir="${MODULE_DIR}/custom/${arch}"
     mkdir -p "${install_dir}"
     cp -r _install/* "${install_dir}/"
     
@@ -199,55 +199,10 @@ author=Build Script
 description=BusyBox ${BUSYBOX_VERSION} compiled with Android NDK for Magisk
 EOF
 
-    # Create update-binary
+    # Create update-binary (standard Magisk boilerplate)
     cat > "${MODULE_DIR}/META-INF/com/google/android/update-binary" << 'UPDATER_EOF'
-#!/bin/sh
-# Magisk update-binary
-umask 022
-
-ui_print() { echo "$1"; }
-api_level() { cat /proc/version | grep -oE 'android.[0-9]+' | cut -d. -f2; }
-
-ui_print "- Installing BusyBox NDK..."
-
-# Get architecture
-ARCH=$(getprop ro.product.cpu.abi | cut -d'-' -f1)
-[ -z "$ARCH" ] && ARCH=$(uname -m)
-
-case "$ARCH" in
-    arm*)
-        ARCH_DIR="arm"
-        ;;
-    aarch64*)
-        ARCH_DIR="arm64"
-        ;;
-    x86*)
-        ARCH_DIR="$ARCH"
-        ;;
-    *)
-        ARCH_DIR="arm"
-        ;;
-esac
-
-# Install binary
-if [ -f "/system/bin/${ARCH_DIR}/busybox" ]; then
-    cp /system/bin/${ARCH_DIR}/busybox /system/bin/busybox
-    chmod 755 /system/bin/busybox
-    
-    # Create symlinks
-    for applet in $(/system/bin/busybox --list); do
-        if [ ! -e "/system/bin/$applet" ] && [ ! -e "/system/xbin/$applet" ]; then
-            ln -sf /system/bin/busybox /system/xbin/$applet 2>/dev/null
-        fi
-    done
-    
-    ui_print "- BusyBox installed successfully!"
-else
-    ui_print "- Error: BusyBox binary not found for $ARCH_DIR"
-    exit 1
-fi
-
-ui_print "- Done!"
+#!/stow/bin/sh
+# Magisk update-binary (dummy, customize.sh handles the work)
 exit 0
 UPDATER_EOF
     chmod 755 "${MODULE_DIR}/META-INF/com/google/android/update-binary"
@@ -277,19 +232,45 @@ EOF
     # Create customize.sh
     cat > "${MODULE_DIR}/customize.sh" << 'EOF'
 #!/system/bin/sh
-# Custom installation script
+# Custom installation script for Magisk
+
+# Detect architecture
+case $ARCH in
+  arm)     ARCH_DIR="arm" ;;
+  arm64)   ARCH_DIR="arm64" ;;
+  x86)     ARCH_DIR="x86" ;;
+  x64)     ARCH_DIR="x86_64" ;;
+  *)       ARCH_DIR="arm64" ;; # Default
+esac
+
+ui_print "- Architecture detected: $ARCH"
+ui_print "- Installing BusyBox for $ARCH_DIR..."
+
+if [ ! -d "$MODPATH/custom/$ARCH_DIR" ]; then
+    ui_print "! Error: Binary for $ARCH_DIR not found in module"
+    abort
+fi
+
+# Move content to system/bin
+mkdir -p "$MODPATH/system/bin"
+cp -af "$MODPATH/custom/$ARCH_DIR/." "$MODPATH/system/bin/"
+rm -rf "$MODPATH/custom"
 
 # Set permissions
-set_perm(0, 0, 0755, "/system/bin/busybox");
+set_perm 0 0 0755 "$MODPATH/system/bin/busybox"
 
 # Create symlinks
-if [ -f "/system/bin/busybox" ]; then
-    for applet in $(/system/bin/busybox --list); do
-        if [ ! -e "/system/bin/$applet" ] && [ ! -e "/system/xbin/$applet" ]; then
-            ln -sf /system/bin/busybox /system/xbin/$applet 2>/dev/null
+ui_print "- Creating applet symlinks..."
+for applet in "$MODPATH/system/bin/busybox" --list; do
+    # We use the binary directly to get the list
+    appList=$("$MODPATH/system/bin/busybox" --list)
+    for a in $appList; do
+        if [ "$a" != "busybox" ]; then
+            ln -sf busybox "$MODPATH/system/bin/$a"
         fi
     done
-fi
+    break
+done
 EOF
     chmod 755 "${MODULE_DIR}/customize.sh"
 }
@@ -297,11 +278,11 @@ EOF
 package_module() {
     log_info "Packaging module..."
     
-    cd "${OUT_DIR}"
-    
-    # Create the zip file
+    # Create the zip file from inside the module directory
     local zip_name="android-busybox-ndk-v${BUSYBOX_VERSION}.zip"
-    zip -r "${zip_name}" module/
+    cd module
+    zip -r "../${zip_name}" .
+    cd ..
     
     log_info "Module created: ${zip_name}"
     
